@@ -49,14 +49,14 @@ String getTimeString(time_t time) {
 
 String measureToString(Measure measure) {
     char measureString[60];
-    snprintf(measureString, 60, "%dD %02d:%02d:%02d - PM2.5 = %*.*s, PM10 = %*.*s, Total = %*.*s\n",
+    snprintf(measureString, 60, "%dD %02d:%02d:%02d - PM2.5 = %d, PM10 = %d, Total = %d\n",
              day(measure.measureTime),
              hour(measure.measureTime),
              minute(measure.measureTime),
              second(measure.measureTime),
-             4, 4, String(measure.pm25).c_str(),
-             4, 4, String(measure.pm10).c_str(),
-             4, 4, String(measure.pm25 + measure.pm10).c_str()
+             measure.pm25,
+             measure.pm10,
+             measure.pm25 + measure.pm10
     );
     return String(measureString);
 }
@@ -100,12 +100,22 @@ void printAllMeasures() {
     }
 }
 
+void printAllMeasures(Measure measures[], int length) {
+    for(int i = 0; i < length; i++){
+        Serial.print(getTimeString((measures[i].measureTime)));
+        Serial.print(" PM2.5 = ");
+        Serial.print(measures[i].pm25);
+        Serial.print("; PM10 = ");
+        Serial.println(measures[i].pm10);
+    }
+}
+
 void printMeasure(Measure measure) {
     Serial.println(measureToString(measure));
 }
 
 void putEveryMinuteMeasure(Measure measure){
-    if (++currentReadingIndex <= EVERY_MINUTE_MEASURES_NUMBER - 1 && everyMinuteMeasureFirstPass) {
+    if (++everyMinuteMeasureIndex <= EVERY_MINUTE_MEASURES_NUMBER - 1 && everyMinuteMeasureFirstPass) {
         everyMinuteMeasures[everyMinuteMeasureIndex] = measure;
     } else {
         for (int i1 = 1, i2 = 0; i1 < EVERY_MINUTE_MEASURES_NUMBER; i1++, i2++) {
@@ -150,44 +160,76 @@ void putEveryHourMeasure(Measure measure){
 }
 
 Measure calculate15minuteAverage() {
+    if(DEBUG){
+        Serial.println("Calculating 15 minute average ...");
+    }
     double pm25Summ = 0;
     double pm10Summ = 0;
     int counter = 0;
     time_t lastTime = 0;
     for(int i = 0; i < EVERY_MINUTE_MEASURES_NUMBER; i++) {
         Measure measure = everyMinuteMeasures[i];
-        if(minute(now() - measure.measureTime) < 15){
+        if(measure.pm25 != -1 && minute(now() - measure.measureTime) < 15){
+            if(DEBUG){
+                Serial.print("[");
+                Serial.print(getTimeString(measure.measureTime));
+                Serial.print(" (");
+                Serial.print(measure.pm25);
+                Serial.print(", ");
+                Serial.print(measure.pm10);
+                Serial.print(")], ");
+            }
             pm25Summ += measure.pm25;
             pm10Summ += measure.pm10;
             lastTime = measure.measureTime;
             counter++;
         }
     }
+    if(DEBUG){
+        Serial.println();
+        Serial.println();
+    }
     if(counter != 0){
         return {lastTime, (int) round(pm25Summ/counter), (int) round(pm10Summ/counter)};
     } else{
-        return {0,0,0};
+        return {0,-1,-1};
     }
 }
 
 Measure calculate1HourAverage() {
+    if(DEBUG){
+        Serial.println("Calculating 1 hour average ...");
+    }
     double pm25Summ = 0;
     double pm10Summ = 0;
     int counter = 0;
     time_t lastTime = 0;
     for(int i = 0; i < EVERY_15_MINUTES_MEASURES_NUMBER; i++) {
         Measure measure = every15minutesMeasures[i];
-        if(hour(now() - measure.measureTime) < 1){
+        if(measure.pm25 != -1 && hour(now() - measure.measureTime) < 1){
+            if(DEBUG){
+                Serial.print("[");
+                Serial.print(getTimeString(measure.measureTime));
+                Serial.print(" (");
+                Serial.print(measure.pm25);
+                Serial.print(", ");
+                Serial.print(measure.pm10);
+                Serial.print(")], ");
+            }
             pm25Summ += measure.pm25;
             pm10Summ += measure.pm10;
             lastTime = measure.measureTime;
             counter++;
         }
     }
+    if(DEBUG){
+        Serial.println();
+        Serial.println();
+    }
     if(counter != 0){
         return {lastTime, (int) round(pm25Summ/counter), (int) round(pm10Summ/counter)};
     } else{
-        return {0,0,0};
+        return {0,-1,-1};
     }
 }
 
@@ -230,23 +272,28 @@ void setup() {
 
 void loop() {
     delay(1000);
+    if(Serial.available() > 0) {
+        int a = Serial.read() - '0';
+        if(a == 1){
+            printAllMeasures(everyMinuteMeasures, EVERY_MINUTE_MEASURES_NUMBER);
+        } else if(a == 2){
+            printAllMeasures(every15minutesMeasures, EVERY_15_MINUTES_MEASURES_NUMBER);
+        } else if(a == 3){
+            printAllMeasures(everyHourMeasures, EVERY_HOUR_MEASURES_NUMBER);
+        }
+    }
     int pm25 = (int) random(0, 50);
     int pm10 = (int) random(0, 50);
 
-    Serial.print("pm25=");
-    Serial.print(pm25);
-    Serial.print(", pm10=");
-    Serial.println(pm10);
-
     Measure currentMeasure = {now(), pm25, pm10};
-    /*putEveryMinuteMeasure(currentMeasure);
-    if (minute(now() - every15minuteTimer) >= 15) {
+    putEveryMinuteMeasure(currentMeasure);
+    if (second(now() - every15minuteTimer) >= 15) {
         every15minuteTimer = now();
         putEvery15MinuteMeasure(calculate15minuteAverage());
     }
-    if (hour(now() - everyHourTimer) >= 1) {
+    if (minute(now() - everyHourTimer) >= 1) {
         everyHourTimer = now();
         putEveryHourMeasure(calculate1HourAverage());
-    }*/
-    printMeasure(currentMeasure);
+    }
+//    printMeasure(currentMeasure);
 }
