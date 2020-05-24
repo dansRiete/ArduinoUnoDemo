@@ -1,12 +1,17 @@
 #include <../lib/Time-master/TimeLib.h>
 #include <math.h>
 #include <Arduino.h>
+#include <../lib/arduino-ds1302-master/DS1302.h>
 
 #define WORKING_PERIOD 1000
 #define SLEEPING_PERIOD 50
 const boolean DEBUG = true;
 const int SENSOR_RX_PIN = 4;
 const int SENSOR_DX_PIN = 5;
+const int CLK_PIN = 12;
+const int DAT_PIN = 11;
+const int RESX_PIN = 13;
+DS1302 rtc(RESX_PIN, DAT_PIN, CLK_PIN);
 
 struct Measure {
     time_t measureTime;
@@ -48,8 +53,10 @@ String getTimeString(time_t time) {
 
 String measureToString(Measure measure) {
     char measureString[60];
-    snprintf(measureString, 60, "%dD %02d:%02d:%02d - PM2.5 = %d, PM10 = %d, Total = %d",
+    snprintf(measureString, 60, "%02d/%02d/%d %02d:%02d:%02d - PM2.5 = %d, PM10 = %d, Total = %d",
              day(measure.measureTime),
+             month(measure.measureTime),
+             year(measure.measureTime),
              hour(measure.measureTime),
              minute(measure.measureTime),
              second(measure.measureTime),
@@ -299,6 +306,11 @@ void setup() {
 
     randomSeed(42);
 
+    Time t = rtc.time();
+    time_t currTimeT = makeTime({t.sec, t.min, t.hr, 1, t.date, t.mon, static_cast<uint8_t>(t.yr - 1970)});
+    every15minuteTimer = currTimeT;
+    everyHourTimer = currTimeT;
+
     for (auto &reading : everyMeasures) {
         reading = nullMeasure;
     }
@@ -309,7 +321,8 @@ void setup() {
         reading = nullMeasure;
     }
     delay(500);
-    if (DEBUG) { Serial.print(getTimeString(now()));Serial.println(" - The sensor should be woken now");Serial.print("WORKING_PERIOD is ");Serial.println(WORKING_PERIOD);Serial.print("SLEEPING_PERIOD is ");Serial.println(SLEEPING_PERIOD); }
+    if (DEBUG) {
+        Serial.print(getTimeString(currTimeT)); Serial.println(" - The sensor should be woken now");Serial.print("WORKING_PERIOD is ");Serial.println(WORKING_PERIOD);Serial.print("SLEEPING_PERIOD is ");Serial.println(SLEEPING_PERIOD); }
 }
 
 void loop() {
@@ -329,11 +342,12 @@ void loop() {
 
     int pm25 = (int) random(0, 50);
     int pm10 = (int) random(0, 50);
-    time_t currentTime = now();
+    Time t = rtc.time();
+    time_t currentTime = makeTime({t.sec, t.min, t.hr, 1, t.date, t.mon, static_cast<uint8_t>(t.yr-1970)});
     Measure currentMeasure = {currentTime, pm25, pm10};
 
-    if (DEBUG) { Serial.print(++totalCounter); Serial.print(". Got a measure: "); printMeasure(currentMeasure); }
-
+    if (DEBUG) {
+        Serial.print(++totalCounter); Serial.print(". Got a measure: "); printMeasure(currentMeasure); }
 
     putEveryMeasure(currentMeasure);
 
